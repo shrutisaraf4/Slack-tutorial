@@ -109,7 +109,46 @@ Content-Type: application/json
 <img width="1351" height="621" alt="image" src="https://github.com/user-attachments/assets/69220c3a-b4e9-4f55-b4a2-1dd6bfb523f3" />
 <img width="1911" height="862" alt="image" src="https://github.com/user-attachments/assets/2311e45f-83b6-4639-913c-089a07c78cfa" />
 <img width="1906" height="732" alt="image" src="https://github.com/user-attachments/assets/eb90bbc8-f298-4555-9681-233b9f2352c6" />
+go to 
+<img width="1227" height="806" alt="image" src="https://github.com/user-attachments/assets/2cdf9a4a-5b5a-4c0d-af8e-fe85bb33c711" />
+<img width="1356" height="891" alt="image" src="https://github.com/user-attachments/assets/1a575eb5-aee4-40f8-9369-5bbed51eb073" />
+add a new file package.json 
 
+The file structure will look like this 
+```
+wwwroot/
+├── host.json
+├── package.json
+└── employee-onboarding/
+    ├── function.json
+    └── index.js
+```
+```json
+{ 
+
+  "name": "employee-onboarding", 
+
+  "version": "1.0.0", 
+
+  "description": "Employee Onboarding Slack Bot", 
+
+  "main": "employee-onboarding/index.js", 
+
+  "private": true, 
+
+  "dependencies": { 
+
+    "@azure/identity": "^4.12.0", 
+
+    "@microsoft/microsoft-graph-client": "^3.0.7", 
+
+    "isomorphic-fetch": "^3.0.0" 
+
+  } 
+
+} 
+```
+<img width="1502" height="787" alt="image" src="https://github.com/user-attachments/assets/4bb6d153-8935-4895-bfe1-7062f4695c05" />
 
 ## Security checklist
 - Never commit tokens to GitHub.
