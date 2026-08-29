@@ -150,6 +150,10 @@ wwwroot/
 ```
 <img width="1502" height="787" alt="image" src="https://github.com/user-attachments/assets/4bb6d153-8935-4895-bfe1-7062f4695c05" />
 <img width="1707" height="585" alt="image" src="https://github.com/user-attachments/assets/9db4e536-e1d8-4b8c-9451-231d25b05108" />
+<img width="1512" height="711" alt="image" src="https://github.com/user-attachments/assets/5a321e3e-d789-40c0-a79f-df2a0d2bb228" />
+<img width="1470" height="860" alt="image" src="https://github.com/user-attachments/assets/f0b8b45b-acc8-43ad-8a64-8a9f63ec9b4a" />
+<img width="1056" height="721" alt="image" src="https://github.com/user-attachments/assets/b27bc559-b57a-4e4f-8ed8-7f66598363e8" />
+create package.json file in main branch under the github repository
 
 ## Security checklist
 - Never commit tokens to GitHub.
