@@ -154,6 +154,20 @@ wwwroot/
 <img width="1470" height="860" alt="image" src="https://github.com/user-attachments/assets/f0b8b45b-acc8-43ad-8a64-8a9f63ec9b4a" />
 <img width="1056" height="721" alt="image" src="https://github.com/user-attachments/assets/b27bc559-b57a-4e4f-8ed8-7f66598363e8" />
 create package.json file in main branch under the github repository
+<img width="1166" height="642" alt="image" src="https://github.com/user-attachments/assets/3bc67482-bc20-4797-b8f6-53a79dadee15" />
+<img width="1417" height="672" alt="image" src="https://github.com/user-attachments/assets/38305c7e-5a65-4fdc-bab2-08e9e4f5b414" />
+<img width="1451" height="761" alt="image" src="https://github.com/user-attachments/assets/63a54e82-3517-4477-ae28-39ae0eca3e93" />
+<img width="1005" height="492" alt="image" src="https://github.com/user-attachments/assets/bb39c108-f3cc-4815-98d3-b1fea9e10851" />
+<img width="1135" height="697" alt="image" src="https://github.com/user-attachments/assets/d570baf5-ad82-47ef-aced-dc9b21b94ad9" />
+
+Fill in the three fields exactly like this:
+1. Name : Create Employee
+2. Short Description: Create a new employee onboarding request
+3. Callback ID : create_employee
+Then click Create.
+<img width="780" height="795" alt="image" src="https://github.com/user-attachments/assets/8621bbb8-3951-4bce-beb7-6397d4ed54b3" />
+
+
 
 ## Security checklist
 - Never commit tokens to GitHub.
