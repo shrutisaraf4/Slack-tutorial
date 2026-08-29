@@ -149,6 +149,7 @@ wwwroot/
 } 
 ```
 <img width="1502" height="787" alt="image" src="https://github.com/user-attachments/assets/4bb6d153-8935-4895-bfe1-7062f4695c05" />
+<img width="1707" height="585" alt="image" src="https://github.com/user-attachments/assets/9db4e536-e1d8-4b8c-9451-231d25b05108" />
 
 ## Security checklist
 - Never commit tokens to GitHub.
