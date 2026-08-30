@@ -1,5 +1,5 @@
 const { Client } = require("@microsoft/microsoft-graph-client");
-const { DefaultAzureCredential } = require("@azure/identity");
+const { ClientSecretCredential } = require("@azure/identity");
 require("isomorphic-fetch");
 const axios = require("axios");
 const querystring = require("querystring");
@@ -7,12 +7,8 @@ const querystring = require("querystring");
 module.exports = async function (context, req) {
     try {
         context.log("=== INCOMING REQUEST ===");
-        context.log("RAW BODY TYPE:", typeof req.body);
-        context.log("RAW BODY:", JSON.stringify(req.body));
-
         let slackData = req.body;
 
-        // Properly parse URL-encoded strings sent by Slack shortcuts
         if (typeof req.body === "string") {
             const parsed = querystring.parse(req.body);
             if (parsed.payload) {
@@ -26,9 +22,7 @@ module.exports = async function (context, req) {
             slackData = req.body.payload;
         }
 
-        context.log("PARSED SLACK DATA:", JSON.stringify(slackData));
-        context.log("CALLBACK ID:", slackData?.callback_id);
-        context.log("TYPE:", slackData?.type);
+        context.log("PARSED SLACK TYPE/CALLBACK:", slackData?.type, slackData?.callback_id);
 
         // 1. Slack URL verification handshake
         if (slackData && slackData.type === "url_verification") {
@@ -38,7 +32,7 @@ module.exports = async function (context, req) {
 
         // 2. Handle Global Shortcut ("create_employee")
         if (slackData && slackData.callback_id === "create_employee") {
-            context.log("MATCHED create_employee shortcut! Opening modal...");
+            context.log("Opening modal for trigger_id:", slackData.trigger_id);
             const triggerId = slackData.trigger_id;
 
             const view = {
@@ -81,19 +75,17 @@ module.exports = async function (context, req) {
                         type: "input",
                         block_id: "country_block",
                         element: { type: "plain_text_input", action_id: "country_input" },
-                        label: { type: "plain_text", text: "Country" }
+                        label: { type: "plain_text", text: "Country (e.g. IN, US)" }
                     }
                 ]
             };
 
-            const slackRes = await axios.post("https://slack.com/api/views.open", {
+            await axios.post("https://slack.com/api/views.open", {
                 trigger_id: triggerId,
                 view: view
             }, {
                 headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
             });
-
-            context.log("Slack views.open API Response:", slackRes.data);
 
             context.res = { status: 200, body: "" };
             return;
@@ -101,7 +93,7 @@ module.exports = async function (context, req) {
 
         // 3. Handle Form Submission (`view_submission`)
         if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
-            context.log("MATCHED view_submission! Creating user in Azure...");
+            // Immediately respond to Slack to clear/close the modal successfully
             context.res = {
                 status: 200,
                 body: { response_action: "clear" }
@@ -113,11 +105,19 @@ module.exports = async function (context, req) {
             const employeeNumber = values.emp_number_block.emp_number_input.value;
             const company = values.company_block.company_input.value;
             const phone = values.phone_block.phone_input.value;
-            const country = values.country_block.country_input.value;
+            let country = values.country_block.country_input.value.trim().toUpperCase();
+            if (country.length > 2) country = "IN"; // Default or fallback if full name entered
+
             const mailNickname = email.split("@")[0];
             const tempPassword = "TempPassword123!";
 
-            const credential = new DefaultAzureCredential();
+            // Use explicit ClientSecretCredential matching your environment variable names
+            const credential = new ClientSecretCredential(
+                process.env.TENANT_ID,
+                process.env.CLIENT_ID,
+                process.env.CLIENT_SECRET
+            );
+
             const authProvider = {
                 getAccessToken: async () => {
                     const token = await credential.getToken("https://graph.microsoft.com/.default");
@@ -175,6 +175,9 @@ module.exports = async function (context, req) {
 
     } catch (error) {
         context.log.error("CRITICAL ERROR:", error.response?.data || error.message);
-        context.res = { status: 500, body: error.message };
+        // If modal submission already responded, sending res here is a fallback
+        if (!context.res) {
+            context.res = { status: 500, body: error.message };
+        }
     }
 };
