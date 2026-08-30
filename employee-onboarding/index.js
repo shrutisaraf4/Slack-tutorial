@@ -6,12 +6,13 @@ const querystring = require("querystring");
 
 module.exports = async function (context, req) {
     try {
-        context.log("--- INCOMING REQUEST RECEIVED ---");
-        context.log("RAW REQ BODY:", JSON.stringify(req.body));
+        context.log("=== INCOMING REQUEST ===");
+        context.log("RAW BODY TYPE:", typeof req.body);
+        context.log("RAW BODY:", JSON.stringify(req.body));
 
         let slackData = req.body;
 
-        // Handle stringified or urlencoded bodies from Slack
+        // Properly parse URL-encoded strings sent by Slack shortcuts
         if (typeof req.body === "string") {
             const parsed = querystring.parse(req.body);
             if (parsed.payload) {
@@ -19,11 +20,15 @@ module.exports = async function (context, req) {
             } else {
                 slackData = parsed;
             }
+        } else if (req.body && typeof req.body.payload === "string") {
+            slackData = JSON.parse(req.body.payload);
         } else if (req.body && req.body.payload) {
-            slackData = typeof req.body.payload === "string" ? JSON.parse(req.body.payload) : req.body.payload;
+            slackData = req.body.payload;
         }
 
-        context.log("PARSED SLACK TYPE/CALLBACK:", slackData?.type, slackData?.callback_id);
+        context.log("PARSED SLACK DATA:", JSON.stringify(slackData));
+        context.log("CALLBACK ID:", slackData?.callback_id);
+        context.log("TYPE:", slackData?.type);
 
         // 1. Slack URL verification handshake
         if (slackData && slackData.type === "url_verification") {
@@ -33,7 +38,7 @@ module.exports = async function (context, req) {
 
         // 2. Handle Global Shortcut ("create_employee")
         if (slackData && slackData.callback_id === "create_employee") {
-            context.log("Triggering modal open for trigger_id:", slackData.trigger_id);
+            context.log("MATCHED create_employee shortcut! Opening modal...");
             const triggerId = slackData.trigger_id;
 
             const view = {
@@ -81,14 +86,14 @@ module.exports = async function (context, req) {
                 ]
             };
 
-            const response = await axios.post("https://slack.com/api/views.open", {
+            const slackRes = await axios.post("https://slack.com/api/views.open", {
                 trigger_id: triggerId,
                 view: view
             }, {
                 headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
             });
 
-            context.log("Slack views.open response:", response.data);
+            context.log("Slack views.open API Response:", slackRes.data);
 
             context.res = { status: 200, body: "" };
             return;
@@ -96,6 +101,7 @@ module.exports = async function (context, req) {
 
         // 3. Handle Form Submission (`view_submission`)
         if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
+            context.log("MATCHED view_submission! Creating user in Azure...");
             context.res = {
                 status: 200,
                 body: { response_action: "clear" }
@@ -168,7 +174,7 @@ module.exports = async function (context, req) {
         context.res = { status: 200, body: "OK" };
 
     } catch (error) {
-        context.log.error("CRITICAL FUNCTION ERROR:", error.response?.data || error.message);
+        context.log.error("CRITICAL ERROR:", error.response?.data || error.message);
         context.res = { status: 500, body: error.message };
     }
 };
