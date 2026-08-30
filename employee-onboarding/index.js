@@ -1,3 +1,14 @@
+module.exports = async function (context, req) {
+    // Add this line to inspect what Slack is actually sending:
+    context.log("INCOMING REQUEST BODY:", JSON.stringify(req.body));
+    
+    // Slack URL verification
+    if (req.body && req.body.type === "url_verification") {
+        context.res = { status: 200, body: req.body.challenge };
+        return;
+    }
+    ...
+    
 const { Client } = require("@microsoft/microsoft-graph-client");
 const { DefaultAzureCredential } = require("@azure/identity");
 require("isomorphic-fetch");
