@@ -9,13 +9,17 @@ module.exports = async function (context, req) {
         context.log("=== INCOMING REQUEST ===");
         let slackData = req.body;
 
-        // 1. Handle Slack URL verification handshake (Event Subscriptions setup)
+        // 1. Handle Slack URL verification challenge immediately
         if (slackData && slackData.type === "url_verification") {
-            context.res = { status: 200, body: slackData.challenge };
+            context.res = {
+                status: 200,
+                headers: { "Content-Type": "text/plain" },
+                body: slackData.challenge
+            };
             return;
         }
 
-        // 2. Robust parsing for URL-encoded Slack payloads (Shortcuts / Modals)
+        // 2. Parse URL-encoded body for modals/shortcuts
         if (typeof req.body === "string") {
             const parsed = querystring.parse(req.body);
             if (parsed.payload) {
@@ -31,25 +35,28 @@ module.exports = async function (context, req) {
 
         context.log("PARSED SLACK TYPE/EVENT:", slackData?.type, slackData?.event?.type);
 
+        // Also check if challenge comes inside parsed JSON body
+        if (slackData && slackData.type === "url_verification") {
+            context.res = {
+                status: 200,
+                headers: { "Content-Type": "text/plain" },
+                body: slackData.challenge
+            };
+            return;
+        }
+
         // 3. Handle App Mentions (Chat commands like "@employee onboarding status jsmith")
         if (slackData && slackData.type === "event_callback" && slackData.event) {
             const event = slackData.event;
-            
-            // Acknowledge Slack's event retry immediately so it doesn't timeout
             context.res = { status: 200, body: "" };
 
             if (event.type === "app_mention" || event.type === "message") {
-                // Ignore bot's own messages to avoid infinite loops
                 if (event.bot_id) return;
 
                 const text = event.text.replace(/<@.*?>/g, "").trim().toLowerCase();
                 const channel = event.channel;
 
-                context.log("Parsed Chat Command Text:", text);
-
-                // Check if command is requesting status or details
                 if (text.includes("status") || text.includes("details") || text.includes("get")) {
-                    // Extract search term (e.g., "status jsmith" -> "jsmith")
                     const parts = text.split(" ");
                     const searchTerm = parts[parts.length - 1];
 
@@ -68,7 +75,6 @@ module.exports = async function (context, req) {
                     };
                     const graphClient = Client.initWithMiddleware({ authProvider });
 
-                    // Search user in Azure AD by UPN, mail, or display name
                     try {
                         const response = await graphClient.api("/users")
                             .filter(`mail eq '${searchTerm}' or userPrincipalName eq '${searchTerm}' or startsWith(displayName, '${searchTerm}') or startsWith(mailNickname, '${searchTerm}')`)
@@ -147,7 +153,7 @@ module.exports = async function (context, req) {
                     {
                         type: "input",
                         block_id: "country_block",
-                        element: { type: "plain_text_input", action_id: "country_input" },
+                        element: { type: "plain_text_input", action_id: "music_input", action_id: "country_input" },
                         label: { type: "plain_text", text: "Country (e.g. IN, US)" }
                     }
                 ]
