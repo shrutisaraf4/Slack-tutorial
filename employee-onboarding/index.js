@@ -9,6 +9,7 @@ module.exports = async function (context, req) {
         context.log("=== INCOMING REQUEST ===");
         let slackData = req.body;
 
+        // Robust parsing for URL-encoded Slack payloads
         if (typeof req.body === "string") {
             const parsed = querystring.parse(req.body);
             if (parsed.payload) {
@@ -22,7 +23,7 @@ module.exports = async function (context, req) {
             slackData = req.body.payload;
         }
 
-        context.log("PARSED SLACK TYPE/CALLBACK:", slackData?.type, slackData?.callback_id);
+        context.log("PARSED SLACK TYPE/CALLBACK:", slackData?.type, slackData?.callback_id || slackData?.view?.callback_id);
 
         // 1. Slack URL verification handshake
         if (slackData && slackData.type === "url_verification") {
@@ -92,8 +93,10 @@ module.exports = async function (context, req) {
         }
 
         // 3. Handle Form Submission (`view_submission`)
-        if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
-            // Immediately respond to Slack to clear/close the modal successfully
+        if (slackData && slackData.type === "view_submission" && slackData.view && slackData.view.callback_id === "employee_onboarding_modal") {
+            context.log("Matched view_submission! Processing user creation...");
+            
+            // Respond immediately to Slack to close the modal gracefully
             context.res = {
                 status: 200,
                 body: { response_action: "clear" }
@@ -106,12 +109,11 @@ module.exports = async function (context, req) {
             const company = values.company_block.company_input.value;
             const phone = values.phone_block.phone_input.value;
             let country = values.country_block.country_input.value.trim().toUpperCase();
-            if (country.length > 2) country = "IN"; // Default or fallback if full name entered
+            if (country.length > 2) country = "IN";
 
             const mailNickname = email.split("@")[0];
             const tempPassword = "TempPassword123!";
 
-            // Use explicit ClientSecretCredential matching your environment variable names
             const credential = new ClientSecretCredential(
                 process.env.TENANT_ID,
                 process.env.CLIENT_ID,
@@ -175,7 +177,6 @@ module.exports = async function (context, req) {
 
     } catch (error) {
         context.log.error("CRITICAL ERROR:", error.response?.data || error.message);
-        // If modal submission already responded, sending res here is a fallback
         if (!context.res) {
             context.res = { status: 500, body: error.message };
         }
