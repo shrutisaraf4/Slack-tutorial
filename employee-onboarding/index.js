@@ -2,110 +2,115 @@ const { Client } = require("@microsoft/microsoft-graph-client");
 const { DefaultAzureCredential } = require("@azure/identity");
 require("isomorphic-fetch");
 const axios = require("axios");
+const querystring = require("querystring");
 
 module.exports = async function (context, req) {
-    // Log incoming body to inspect what Slack sends
-    context.log("INCOMING REQUEST BODY:", JSON.stringify(req.body));
+    try {
+        context.log("--- INCOMING REQUEST RECEIVED ---");
+        context.log("RAW REQ BODY:", JSON.stringify(req.body));
 
-    // Handle URL-encoded payloads if Slack sends them nested
-    let slackData = req.body;
-    if (req.body && req.body.payload) {
-        try {
-            slackData = JSON.parse(req.body.payload);
-        } catch (e) {
-            // Keep original if parsing fails
+        let slackData = req.body;
+
+        // Handle stringified or urlencoded bodies from Slack
+        if (typeof req.body === "string") {
+            const parsed = querystring.parse(req.body);
+            if (parsed.payload) {
+                slackData = JSON.parse(parsed.payload);
+            } else {
+                slackData = parsed;
+            }
+        } else if (req.body && req.body.payload) {
+            slackData = typeof req.body.payload === "string" ? JSON.parse(req.body.payload) : req.body.payload;
         }
-    }
 
-    // 1. Slack URL verification handshake
-    if (slackData && slackData.type === "url_verification") {
-        context.res = { status: 200, body: slackData.challenge };
-        return;
-    }
+        context.log("PARSED SLACK TYPE/CALLBACK:", slackData?.type, slackData?.callback_id);
 
-    // 2. Handle the Global Shortcut click ("Create Employee") -> Open Modal Form
-    if (slackData && slackData.callback_id === "create_employee") {
-        const triggerId = slackData.trigger_id;
+        // 1. Slack URL verification handshake
+        if (slackData && slackData.type === "url_verification") {
+            context.res = { status: 200, body: slackData.challenge };
+            return;
+        }
 
-        const view = {
-            type: "modal",
-            callback_id: "employee_onboarding_modal",
-            title: { type: "plain_text", text: "New Employee Onboarding" },
-            submit: { type: "plain_text", text: "Create User" },
-            blocks: [
-                {
-                    type: "input",
-                    block_id: "emp_name_block",
-                    element: { type: "plain_text_input", action_id: "emp_name_input" },
-                    label: { type: "plain_text", text: "Full Name" }
-                },
-                {
-                    type: "input",
-                    block_id: "emp_email_block",
-                    element: { type: "plain_text_input", action_id: "emp_email_input" },
-                    label: { type: "plain_text", text: "Email ID / UPN" }
-                },
-                {
-                    type: "input",
-                    block_id: "emp_number_block",
-                    element: { type: "plain_text_input", action_id: "emp_number_input" },
-                    label: { type: "plain_text", text: "Employee Number" }
-                },
-                {
-                    type: "input",
-                    block_id: "company_block",
-                    element: { type: "plain_text_input", action_id: "company_input" },
-                    label: { type: "plain_text", text: "Company" }
-                },
-                {
-                    type: "input",
-                    block_id: "phone_block",
-                    element: { type: "plain_text_input", action_id: "phone_input" },
-                    label: { type: "plain_text", text: "Phone Number" }
-                },
-                {
-                    type: "input",
-                    block_id: "country_block",
-                    element: { type: "plain_text_input", action_id: "country_input" },
-                    label: { type: "plain_text", text: "Country" }
-                }
-            ]
-        };
+        // 2. Handle Global Shortcut ("create_employee")
+        if (slackData && slackData.callback_id === "create_employee") {
+            context.log("Triggering modal open for trigger_id:", slackData.trigger_id);
+            const triggerId = slackData.trigger_id;
 
-        try {
-            await axios.post("https://slack.com/api/views.open", {
+            const view = {
+                type: "modal",
+                callback_id: "employee_onboarding_modal",
+                title: { type: "plain_text", text: "New Employee Onboarding" },
+                submit: { type: "plain_text", text: "Create User" },
+                blocks: [
+                    {
+                        type: "input",
+                        block_id: "emp_name_block",
+                        element: { type: "plain_text_input", action_id: "emp_name_input" },
+                        label: { type: "plain_text", text: "Full Name" }
+                    },
+                    {
+                        type: "input",
+                        block_id: "emp_email_block",
+                        element: { type: "plain_text_input", action_id: "emp_email_input" },
+                        label: { type: "plain_text", text: "Email ID / UPN" }
+                    },
+                    {
+                        type: "input",
+                        block_id: "emp_number_block",
+                        element: { type: "plain_text_input", action_id: "emp_number_input" },
+                        label: { type: "plain_text", text: "Employee Number" }
+                    },
+                    {
+                        type: "input",
+                        block_id: "company_block",
+                        element: { type: "plain_text_input", action_id: "company_input" },
+                        label: { type: "plain_text", text: "Company" }
+                    },
+                    {
+                        type: "input",
+                        block_id: "phone_block",
+                        element: { type: "plain_text_input", action_id: "phone_input" },
+                        label: { type: "plain_text", text: "Phone Number" }
+                    },
+                    {
+                        type: "input",
+                        block_id: "country_block",
+                        element: { type: "plain_text_input", action_id: "country_input" },
+                        label: { type: "plain_text", text: "Country" }
+                    }
+                ]
+            };
+
+            const response = await axios.post("https://slack.com/api/views.open", {
                 trigger_id: triggerId,
                 view: view
             }, {
                 headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
             });
 
+            context.log("Slack views.open response:", response.data);
+
             context.res = { status: 200, body: "" };
-        } catch (error) {
-            context.log.error("Error opening Slack modal:", error.response?.data || error.message);
-            context.res = { status: 500, body: "Failed to open modal" };
+            return;
         }
-        return;
-    }
 
-    // 3. Handle Form Submission (`view_submission`) -> Check Azure & Create User
-    if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
-        context.res = {
-            status: 200,
-            body: { response_action: "clear" }
-        };
+        // 3. Handle Form Submission (`view_submission`)
+        if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
+            context.res = {
+                status: 200,
+                body: { response_action: "clear" }
+            };
 
-        const values = slackData.view.state.values;
-        const fullName = values.emp_name_block.emp_name_input.value;
-        const email = values.emp_email_block.emp_email_input.value;
-        const employeeNumber = values.emp_number_block.emp_number_input.value;
-        const company = values.company_block.company_input.value;
-        const phone = values.phone_block.phone_input.value;
-        const country = values.country_block.country_input.value;
-        const mailNickname = email.split("@")[0];
-        const tempPassword = "TempPassword123!";
+            const values = slackData.view.state.values;
+            const fullName = values.emp_name_block.emp_name_input.value;
+            const email = values.emp_email_block.emp_email_input.value;
+            const employeeNumber = values.emp_number_block.emp_number_input.value;
+            const company = values.company_block.company_input.value;
+            const phone = values.phone_block.phone_input.value;
+            const country = values.country_block.country_input.value;
+            const mailNickname = email.split("@")[0];
+            const tempPassword = "TempPassword123!";
 
-        try {
             const credential = new DefaultAzureCredential();
             const authProvider = {
                 getAccessToken: async () => {
@@ -157,17 +162,13 @@ module.exports = async function (context, req) {
                 headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
             });
 
-        } catch (error) {
-            context.log.error("Error creating user via Microsoft Graph:", error);
-            await axios.post("https://slack.com/api/chat.postMessage", {
-                channel: "#employee-onboarding",
-                text: `❌ *Error creating user ${fullName}:* \`${error.message}\``
-            }, {
-                headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
-            });
+            return;
         }
-        return;
-    }
 
-    context.res = { status: 200, body: "OK" };
+        context.res = { status: 200, body: "OK" };
+
+    } catch (error) {
+        context.log.error("CRITICAL FUNCTION ERROR:", error.response?.data || error.message);
+        context.res = { status: 500, body: error.message };
+    }
 };
