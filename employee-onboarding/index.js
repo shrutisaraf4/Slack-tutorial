@@ -1,29 +1,31 @@
-module.exports = async function (context, req) {
-    // Add this line to inspect what Slack is actually sending:
-    context.log("INCOMING REQUEST BODY:", JSON.stringify(req.body));
-    
-    // Slack URL verification
-    if (req.body && req.body.type === "url_verification") {
-        context.res = { status: 200, body: req.body.challenge };
-        return;
-    }
-    ...
-    
 const { Client } = require("@microsoft/microsoft-graph-client");
 const { DefaultAzureCredential } = require("@azure/identity");
 require("isomorphic-fetch");
 const axios = require("axios");
 
 module.exports = async function (context, req) {
+    // Log incoming body to inspect what Slack sends
+    context.log("INCOMING REQUEST BODY:", JSON.stringify(req.body));
+
+    // Handle URL-encoded payloads if Slack sends them nested
+    let slackData = req.body;
+    if (req.body && req.body.payload) {
+        try {
+            slackData = JSON.parse(req.body.payload);
+        } catch (e) {
+            // Keep original if parsing fails
+        }
+    }
+
     // 1. Slack URL verification handshake
-    if (req.body && req.body.type === "url_verification") {
-        context.res = { status: 200, body: req.body.challenge };
+    if (slackData && slackData.type === "url_verification") {
+        context.res = { status: 200, body: slackData.challenge };
         return;
     }
 
     // 2. Handle the Global Shortcut click ("Create Employee") -> Open Modal Form
-    if (req.body && req.body.callback_id === "create_employee") {
-        const triggerId = req.body.trigger_id;
+    if (slackData && slackData.callback_id === "create_employee") {
+        const triggerId = slackData.trigger_id;
 
         const view = {
             type: "modal",
@@ -87,14 +89,13 @@ module.exports = async function (context, req) {
     }
 
     // 3. Handle Form Submission (`view_submission`) -> Check Azure & Create User
-    if (req.body && req.body.type === "view_submission" && req.body.view.callback_id === "employee_onboarding_modal") {
-        // Acknowledge the modal closure immediately to Slack (must happen within 3 seconds)
+    if (slackData && slackData.type === "view_submission" && slackData.view.callback_id === "employee_onboarding_modal") {
         context.res = {
             status: 200,
             body: { response_action: "clear" }
         };
 
-        const values = req.body.view.state.values;
+        const values = slackData.view.state.values;
         const fullName = values.emp_name_block.emp_name_input.value;
         const email = values.emp_email_block.emp_email_input.value;
         const employeeNumber = values.emp_number_block.emp_number_input.value;
@@ -102,10 +103,9 @@ module.exports = async function (context, req) {
         const phone = values.phone_block.phone_input.value;
         const country = values.country_block.country_input.value;
         const mailNickname = email.split("@")[0];
-        const tempPassword = "TempPassword123!"; // Change generation logic for production if needed
+        const tempPassword = "TempPassword123!";
 
         try {
-            // Initialize Microsoft Graph Client via Managed Identity
             const credential = new DefaultAzureCredential();
             const authProvider = {
                 getAccessToken: async () => {
@@ -115,7 +115,6 @@ module.exports = async function (context, req) {
             };
             const graphClient = Client.initWithMiddleware({ authProvider });
 
-            // Check if user already exists
             let userExists = false;
             try {
                 const existingUser = await graphClient.api(`/users/${email}`).get();
@@ -134,7 +133,6 @@ module.exports = async function (context, req) {
                 return;
             }
 
-            // Create user in Azure Active Directory (Entra ID)
             const userProperties = {
                 accountEnabled: true,
                 displayName: fullName,
@@ -152,7 +150,6 @@ module.exports = async function (context, req) {
 
             await graphClient.api("/users").post(userProperties);
 
-            // Notify Slack channel of success
             await axios.post("https://slack.com/api/chat.postMessage", {
                 channel: "#employee-onboarding",
                 text: `✅ *New User Created Successfully in Azure!*\n• *Name:* ${fullName}\n• *Email:* ${email}\n• *Employee No:* ${employeeNumber}\n• *Company:* ${company}\n• *Country:* ${country}`
