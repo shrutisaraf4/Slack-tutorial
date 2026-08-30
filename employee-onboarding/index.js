@@ -7,45 +7,34 @@ const querystring = require("querystring");
 module.exports = async function (context, req) {
     try {
         context.log("=== INCOMING REQUEST ===");
-        let slackData = req.body;
+
+        // Safely parse req.body whether it's an object or a string
+        let body = req.body;
+        if (typeof body === "string") {
+            try {
+                body = JSON.parse(body);
+            } catch (e) {
+                // might be url-encoded
+                const parsed = querystring.parse(body);
+                if (parsed.payload) body = JSON.parse(parsed.payload);
+            }
+        }
 
         // 1. Handle Slack URL verification challenge immediately
-        if (slackData && slackData.type === "url_verification") {
+        if (body && body.type === "url_verification") {
             context.res = {
                 status: 200,
                 headers: { "Content-Type": "text/plain" },
-                body: slackData.challenge
+                body: body.challenge
             };
             return;
         }
 
-        // 2. Parse URL-encoded body for modals/shortcuts
-        if (typeof req.body === "string") {
-            const parsed = querystring.parse(req.body);
-            if (parsed.payload) {
-                slackData = JSON.parse(parsed.payload);
-            } else {
-                slackData = parsed;
-            }
-        } else if (req.body && typeof req.body.payload === "string") {
-            slackData = JSON.parse(req.body.payload);
-        } else if (req.body && req.body.payload) {
-            slackData = req.body.payload;
-        }
+        let slackData = body;
 
         context.log("PARSED SLACK TYPE/EVENT:", slackData?.type, slackData?.event?.type);
 
-        // Also check if challenge comes inside parsed JSON body
-        if (slackData && slackData.type === "url_verification") {
-            context.res = {
-                status: 200,
-                headers: { "Content-Type": "text/plain" },
-                body: slackData.challenge
-            };
-            return;
-        }
-
-        // 3. Handle App Mentions (Chat commands like "@employee onboarding status jsmith")
+        // 2. Handle App Mentions (Chat commands like "@employee onboarding status jsmith")
         if (slackData && slackData.type === "event_callback" && slackData.event) {
             const event = slackData.event;
             context.res = { status: 200, body: "" };
@@ -111,7 +100,7 @@ module.exports = async function (context, req) {
             return;
         }
 
-        // 4. Handle Global Shortcut ("create_employee") -> Open Modal
+        // 3. Handle Global Shortcut ("create_employee") -> Open Modal
         if (slackData && slackData.callback_id === "create_employee") {
             const triggerId = slackData.trigger_id;
             const view = {
@@ -153,7 +142,7 @@ module.exports = async function (context, req) {
                     {
                         type: "input",
                         block_id: "country_block",
-                        element: { type: "plain_text_input", action_id: "music_input", action_id: "country_input" },
+                        element: { type: "plain_text_input", action_id: "country_input" },
                         label: { type: "plain_text", text: "Country (e.g. IN, US)" }
                     }
                 ]
@@ -170,7 +159,7 @@ module.exports = async function (context, req) {
             return;
         }
 
-        // 5. Handle Modal Form Submission (`view_submission`) -> Create User in Azure
+        // 4. Handle Modal Form Submission (`view_submission`) -> Create User in Azure
         if (slackData && slackData.type === "view_submission" && slackData.view && slackData.view.callback_id === "employee_onboarding_modal") {
             context.res = {
                 status: 200,
