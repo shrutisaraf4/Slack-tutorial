@@ -1,8 +1,14 @@
-# Project 01 — Employee Onboarding: Slack App + Azure Function + Azure App Registeration
+# Project — Employee Onboarding: Slack App + Azure Function + Azure App Registeration + GitHUb Actions 
 
 > **Purpose:** Build the foundation for an Employee Onboarding integration where Slack sends an interaction to an Azure Function, the Function processes the request, and the integration can later call Microsoft Graph/Azure services.
 >
 > **Current working state:** The Azure Function App is running, the Slack app is installed, Interactivity is enabled, and the `Create Employee` global shortcut has been created with callback ID `create_employee`.
+
+## Accounts / tools
+- Slack workspace
+- Slack API app configuration
+- Postman or curl
+- GitHub repository
 
 ---
 
