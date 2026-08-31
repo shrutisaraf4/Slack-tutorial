@@ -1,4 +1,4 @@
-# Project 01 — Employee Onboarding: Slack App + Azure Function Foundation
+# Project 01 — Employee Onboarding: Slack App + Azure Function + Azure App Registeration
 
 > **Purpose:** Build the foundation for an Employee Onboarding integration where Slack sends an interaction to an Azure Function, the Function processes the request, and the integration can later call Microsoft Graph/Azure services.
 >
@@ -29,19 +29,31 @@ Azure Function App
 Future: Microsoft Graph / Entra ID / other HR automation
 ```
 
-### Important distinction
+## Employee Onboarding Bot — Slack → Azure Entra ID (Microsoft Graph) 
 
-A **Slack global shortcut is not a slash command**.
+A Slack bot, backed by an Azure Function, that lets HR/IT create new employee accounts in **Microsoft Entra ID** directly from Slack — and look up an existing user's status without ever opening the Azure Portal. 
 
-Do **not** test this by typing:
+> **Note:** every step below — the Slack app configuration, Azure Function deployment, App Registration, and Microsoft Graph permissions — was set up and tested manually by the author, end to end, before this bot was considered working. The screenshots throughout this document are direct evidence from that manual setup and testing, not generated or simulated.
 
-```text
-/shortcut
-/create employee
-/create_employee
-```
 
-Those are slash-command attempts. The shortcut is invoked from Slack's shortcut UI/search, and Slack sends the shortcut's **Callback ID** (`create_employee`) to the Request URL.
+## Capability - How you trigger it in Slack 
+
+**Create a new employee** | Global shortcut → **Create Employee** → fill the modal → **Create User** ✅ Working 
+
+**Confirmation posted to channel** | Automatic, after a successful create ✅ Working 
+
+**Look up an existing user's status/details** | `@employee onboarding status <name or email>` ⚠️ work in progress
+
+--- 
+## How it works, end to end 
+1. A user runs the **Create Employee** shortcut in Slack.
+2. Slack opens the **New Employee Onboarding** modal and collects: Full Name, Email/UPN, Employee Number, Company, Phone, Country.
+3. On submit, Slack sends a `view_submission` payload to the Azure Function.
+4. The Function authenticates to Microsoft Graph using `ClientSecretCredential` (App Registration).
+5. It checks whether the email already exists in Entra ID.
+6. If not, it calls `POST /users` to create the account (with a temporary password, forced reset on first sign-in).
+7. The Function posts a success/failure message back to `#employee-onboarding` using `chat.postMessage`.
+8. Separately, mentioning the bot (`@employee onboarding status <term>`) should query `GET /users` and reply with the matched user's details.
 
 ---
 
