@@ -548,3 +548,268 @@ Trigger: HTTP
 ```
 
 Additional current-state screenshots referenced above are stored under `Project01-assets/` alongside this file.
+
+
+
+---
+ 
+# 17. Phase 2 — Full interactive bot: status lookup, group membership, licenses
+ 
+**Goal of this phase:** turn the bot from "create user + say OK" into a fully interactive admin tool that can also (a) reliably return an existing user's status/details, (b) add a user to a Microsoft 365 or Security group, and (c) assign a Microsoft 365 license — all from Slack, with clear success/failure feedback.
+ 
+## Phase 2.1 — Expand Microsoft Graph permissions
+ 
+The Phase 1 App Registration only needed enough to create users. This phase needs more.
+ 
+### Step 17.1.1 — Open the App Registration
+ 
+1. Azure Portal → **Microsoft Entra ID → App registrations**.
+2. Open the registration used by the Function (`ClientSecretCredential`).
+3. Go to **API permissions**.
+### Step 17.1.2 — Add these Application permissions (admin consent required)
+ 
+| Permission | Why it's needed |
+|---|---|
+| `User.ReadWrite.All` | Create users, read user profile for status lookup |
+| `Group.ReadWrite.All` | Add/remove members from Security and Microsoft 365 groups |
+| `Directory.Read.All` | Resolve group display names / search directory objects |
+| `Organization.Read.All` | Read `subscribedSkus` to know which licenses exist and how many are free |
+ 
+> **Least privilege note:** only add a permission once the specific Graph call that needs it is implemented — don't pre-grant the whole list on day one. Add each one right before you build the feature that uses it, then click **Grant admin consent** for the tenant.
+ 
+### Screenshot placeholder
+ 
+`[ ] Screenshot — API permissions page showing the four permissions above, admin consent granted]`
+ 
+---
+ 
+## Phase 2.2 — Make the status lookup robust
+ 
+### Step 17.2.1 — Design the Graph query
+ 
+Given a name or email typed after `@employee onboarding status`, search Entra ID with a Graph `$filter` / `$search`:
+ 
+```javascript
+const { Client } = require("@microsoft/microsoft-graph-client");
+ 
+async function findUser(graphClient, term) {
+  const isEmail = term.includes("@");
+  const filter = isEmail
+    ? `mail eq '${term}' or userPrincipalName eq '${term}'`
+    : `startswith(displayName,'${term}')`;
+ 
+  const result = await graphClient
+    .api("/users")
+    .filter(filter)
+    .select("id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,department,companyName")
+    .get();
+ 
+  return result.value; // array — could be 0, 1, or several matches
+}
+```
+ 
+### Step 17.2.2 — Handle the three outcomes
+ 
+| Result | Slack reply |
+|---|---|
+| 0 matches | "No user found matching `<term>`." |
+| 1 match | A formatted card: name, email, department, company, enabled/disabled status |
+| 2+ matches | List all matches (name + email) and ask the requester to be more specific |
+ 
+### Step 17.2.3 — Wire it into the Function's `app_mention` branch
+ 
+```javascript
+if (req.body?.event?.type === "app_mention") {
+  const text = req.body.event.text || "";
+  const match = text.match(/status\s+(.+)/i);
+  if (match) {
+    const term = match[1].trim();
+    const users = await findUser(graphClient, term);
+    const message = formatStatusReply(users, term); // build Block Kit or plain text
+    await postToSlack(req.body.event.channel, message);
+  }
+  context.res = { status: 200, body: "" };
+  return;
+}
+```
+ 
+### Screenshot placeholders
+ 
+`[ ] Screenshot — Slack message: @employee onboarding status <email> returning a single matched user]`
+`[ ] Screenshot — Slack message: status query with no match]`
+`[ ] Screenshot — Slack message: status query with multiple matches]`
+ 
+---
+ 
+## Phase 2.3 — Add "Add to Group" as a bot action
+ 
+### Step 17.3.1 — Extend the onboarding modal
+ 
+Add a **multi-select** block to the `Create Employee` modal (or a separate `Add to Group` shortcut) listing the target groups. Two realistic options:
+ 
+- **Static list** — hardcode the handful of groups HR actually uses (fastest to ship).
+- **Dynamic list** — call `GET /groups?$filter=...` at modal-open time and populate the multi-select from real group names.
+```javascript
+// Dynamic option list example
+const groups = await graphClient
+  .api("/groups")
+  .select("id,displayName,groupTypes,securityEnabled")
+  .get();
+ 
+const options = groups.value.map(g => ({
+  text: { type: "plain_text", text: g.displayName },
+  value: g.id
+}));
+```
+ 
+### Step 17.3.2 — Add the member via Graph
+ 
+```javascript
+async function addUserToGroup(graphClient, userId, groupId) {
+  await graphClient.api(`/groups/${groupId}/members/$ref`).post({
+    "@odata.id": `https://graph.microsoft.com/v1.0/directoryObjects/${userId}`
+  });
+}
+```
+ 
+This same call works for **both** Security groups and Microsoft 365 groups — Graph doesn't distinguish at the membership-add endpoint; the group's own `groupTypes` field is what makes it "Microsoft 365" vs. plain Security.
+ 
+### Step 17.3.3 — Handle the response
+ 
+- `204 No Content` → success → post confirmation to `#employee-onboarding`.
+- `400`/`404` → group or user not found → post a clear error, don't fail silently.
+- Already a member → Graph returns a specific error code; treat as a soft success ("already in that group") rather than a hard failure.
+### Screenshot placeholders
+ 
+`[ ] Screenshot — modal with the group multi-select added]`
+`[ ] Screenshot — Slack confirmation after successfully adding a user to a group]`
+`[ ] Screenshot — Azure Function log showing the /groups/{id}/members/$ref call succeeding]`
+ 
+---
+ 
+## Phase 2.4 — Add license assignment
+ 
+### Step 17.4.1 — Find out which licenses (SKUs) exist in the tenant
+ 
+```javascript
+async function listAvailableLicenses(graphClient) {
+  const skus = await graphClient.api("/subscribedSkus").get();
+  return skus.value.map(s => ({
+    skuId: s.skuId,
+    skuPartNumber: s.skuPartNumber,
+    available: s.prepaidUnits.enabled - s.consumedUnits
+  }));
+}
+```
+ 
+Use this to populate a **license** dropdown in the modal, and to warn if a SKU has 0 seats left before attempting the assignment.
+ 
+### Step 17.4.2 — Assign the license
+ 
+```javascript
+async function assignLicense(graphClient, userId, skuId) {
+  await graphClient.api(`/users/${userId}/assignLicense`).post({
+    addLicenses: [{ skuId, disabledPlans: [] }],
+    removeLicenses: []
+  });
+}
+```
+ 
+> **Prerequisite Graph rule:** the user must already have a `usageLocation` set (e.g. `"US"`, `"IN"`) before a license can be assigned — set this when the user is created in Phase 1's `POST /users` call, or the license assignment will fail with a clear Graph error.
+ 
+### Step 17.4.3 — Handle the response
+ 
+- Success → confirm in Slack which license was applied.
+- `usageLocation` missing → catch that specific Graph error and tell the requester to set the user's country first.
+- No seats available → check `available` from Step 17.4.1 before calling, and short-circuit with a friendly Slack message instead of letting Graph reject it.
+### Screenshot placeholders
+ 
+`[ ] Screenshot — modal with the license dropdown added]`
+`[ ] Screenshot — Slack confirmation after a license is successfully assigned]`
+`[ ] Screenshot — subscribedSkus response in Postman/Graph Explorer showing available seat counts]`
+ 
+---
+ 
+## Phase 2.5 — Make the whole bot properly "interactive"
+ 
+This is what turns three separate features into one coherent bot.
+ 
+### Step 17.5.1 — Route on `callback_id`, not just presence of a payload
+ 
+The Function should branch cleanly on the interaction type and callback ID:
+ 
+```javascript
+const payload = req.body.payload ? JSON.parse(req.body.payload) : req.body;
+ 
+switch (payload.callback_id || payload.view?.callback_id) {
+  case "create_employee":
+    return handleCreateEmployee(payload, context);
+  case "add_to_group":
+    return handleAddToGroup(payload, context);
+  case "assign_license":
+    return handleAssignLicense(payload, context);
+  default:
+    context.res = { status: 200, body: "" };
+}
+```
+ 
+### Step 17.5.2 — Give immediate feedback, then follow up
+ 
+Slack expects an HTTP response within 3 seconds. For anything that calls Graph (which can be slower):
+ 
+1. Immediately return `200` with an empty body (or an ephemeral "Working on it…" message).
+2. Do the Graph work asynchronously.
+3. Post the real result back using `chat.postMessage` (channel) or `response_url` (ephemeral, tied to the original interaction).
+### Step 17.5.3 — Use Block Kit for readable confirmations
+ 
+Instead of plain text, format success/failure messages as Block Kit sections — name, email, action taken, and a colored indicator (✅/❌) — so the channel stays scannable as more onboarding events come through.
+ 
+### Step 17.5.4 — Verify every incoming Slack request
+ 
+Add Slack's signing-secret verification (HMAC over the raw body + timestamp) at the top of the Function, before any payload is trusted — this was deferred in Phase 1 and should not ship past this phase.
+ 
+### Step 17.5.5 — Centralize error handling and logging
+ 
+Wrap every Graph call in a try/catch that logs the Graph error code (not the token) and always posts *something* back to Slack — a silent failure is worse than a visible one.
+ 
+### Screenshot placeholders
+ 
+`[ ] Screenshot — Function code showing the callback_id switch/router]`
+`[ ] Screenshot — Slack message using Block Kit formatting for a confirmation]`
+`[ ] Screenshot — Function app settings showing SLACK_SIGNING_SECRET stored securely]`
+ 
+---
+ 
+## Phase 2.6 — End-to-end test plan for Phase 2
+ 
+| # | Test | Expected result |
+|---|---|---|
+| 1 | `@employee onboarding status <existing email>` | Returns that user's details |
+| 2 | `@employee onboarding status <nonsense>` | "No user found" message |
+| 3 | Create Employee → also select a Security group in the modal | New user created **and** added to the group |
+| 4 | Create Employee → also select a Microsoft 365 group | New user created **and** added to the group |
+| 5 | Assign a license to an existing user with `usageLocation` set | License applied, confirmed in Slack |
+| 6 | Assign a license to a user missing `usageLocation` | Clear Slack error explaining the missing field |
+| 7 | Attempt to add a user to a group they're already in | Soft-success message, not a crash |
+| 8 | Send a request without a valid Slack signature | Function rejects it (401/403), nothing is processed |
+ 
+### Screenshot placeholder
+ 
+`[ ] Screenshot — a completed test run (all 8 scenarios) from Postman/Slack]`
+ 
+---
+ 
+## Already done in this project
+ 
+The items below are already implemented and working in the actual project — the checklist above is only missing the screenshots, which I'll add as I re-run each test:
+ 
+- [x] Microsoft Graph permissions expanded and admin consent granted (`User.ReadWrite.All`, `Group.ReadWrite.All`, `Directory.Read.All`, `Organization.Read.All`)
+- [x] Status lookup (`@employee onboarding status <name or email>`) implemented and returning real Entra ID data
+- [x] Create Employee flow fully working end to end (modal → Graph `POST /users` → Slack confirmation)
+- [ ] Add-to-group action (Security + Microsoft 365 groups) — *(mark `[x]` once verified with a live test)*
+- [ ] License assignment action — *(mark `[x]` once verified with a live test)*
+- [ ] `callback_id` router handling all three actions cleanly
+- [ ] Block Kit formatted confirmations
+- [ ] Slack signing-secret verification added to the Function
+> As each remaining box is checked off in real testing, replace its `[ ] Screenshot — ...]` placeholder above with the actual screenshot, the same way Phase 1 was documented.
+ 
