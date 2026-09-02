@@ -1,7 +1,7 @@
 {
   "name": "employee-onboarding",
-  "version": "1.0.0",
-  "description": "Employee Onboarding Slack Bot",
+  "version": "2.0.0",
+  "description": "Employee Onboarding Slack Bot — create users, look up status, add to Security/Microsoft 365 groups, and assign Microsoft 365 licenses via Microsoft Graph",
   "main": "employee-onboarding/index.js",
   "private": true,
   "dependencies": {
